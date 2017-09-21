@@ -1,54 +1,53 @@
 import string
 
 from pyparsing import (
-    Literal, White, Word, alphanums, CharsNotIn, Forward, Group, SkipTo,
-    Optional, OneOrMore, ZeroOrMore, pythonStyleComment)
+    Literal, White, Word, CharsNotIn, Forward, Group, SkipTo, Optional,
+    ZeroOrMore, pythonStyleComment, QuotedString, Keyword,
+    alphanums, alphas)
 
 
 class NginxParser(object):
     """
     A class that parses nginx configuration with pyparsing
     """
-
-    # constants
+    sq_string = QuotedString("'", multiline=True, unquoteResults=False)
+    dq_string = QuotedString('"', multiline=True, unquoteResults=False)
+    qstring = sq_string | dq_string
+    key = Word(alphas, alphanums+"\_/")
+    space = White().suppress()
+    value = CharsNotIn(string.whitespace + ";{")
+    semi = Literal(';').suppress()
     left_bracket = Literal("{").suppress()
     right_bracket = Literal("}").suppress()
-    semicolon = Literal(";").suppress()
-    space = White().suppress()
-    key = Word(alphanums + "_/")
-    value = CharsNotIn("{};")
-    value2 = CharsNotIn(";")
-    location = CharsNotIn("{};," + string.whitespace)
-    ifword = Literal("if")
-    setword = Literal("set")
-    # modifier for location uri [ = | ~ | ~* | ^~ ]
+
     modifier = Literal("=") | Literal("~*") | Literal("~") | Literal("^~")
 
-    # rules
-    assignment = (key + Optional(space + value) + semicolon)
-    setblock = (setword + OneOrMore(space + value2) + semicolon)
-    block = Forward()
-    ifblock = Forward()
-    subblock = Forward()
+    doc = Forward()
+    if_block = Forward()
+    location_block = Forward()
 
-    ifblock << (
-        Group(ifword + Optional(space) + Optional(value) + SkipTo('{'))
+    block = left_bracket + Group(doc) + right_bracket
+
+    assignment = (
+            Optional(space) + key + ZeroOrMore(space + (qstring | value)) +
+            (semi | block))
+
+    if_block << (
+        Keyword("if") + SkipTo('{')
         + left_bracket
-        + Group(subblock)
+        + Group(doc)
         + right_bracket)
 
-    subblock << ZeroOrMore(
-        Group(assignment) | block | Group(ifblock) | setblock
-    )
-
-    block << Group(
-        Group(key + Optional(space + modifier) + Optional(space + location))
+    location_block << (
+        Keyword("location") + Optional(space + modifier) + SkipTo('{')
         + left_bracket
-        + Group(subblock)
-        + right_bracket
-    )
+        + Group(doc)
+        + right_bracket)
 
-    script = OneOrMore(Group(assignment) | block).ignore(pythonStyleComment)
+    command = Group(if_block | location_block | assignment)
+
+    doc << ZeroOrMore(command).ignore(pythonStyleComment)
+    script = doc
 
     def __init__(self, source):
         self.source = source
@@ -74,39 +73,33 @@ class NginxDumper(object):
         self.blocks = blocks
         self.indentation = indentation
 
-    def __iter__(self, blocks=None, current_indent=0, spacer=' '):
-        """
-        Iterates the dumped nginx content.
-        """
+    def dumpstr(self, blocks=None, indent=0, spacer=' '):
         blocks = blocks or self.blocks
-        for key, values in blocks:
-            if current_indent:
-                yield spacer
-            indentation = spacer * current_indent
-            if isinstance(key, list):
-                yield indentation + spacer.join(key) + ' {'
-                for parameter in values:
-                    if isinstance(parameter[0], list):
-                        dumped = self.__iter__(
-                            [parameter],
-                            current_indent + self.indentation)
-                        for line in dumped:
-                            yield line
-                    else:
-                        dumped = spacer.join(parameter) + ';'
-                        yield spacer * (
-                            current_indent + self.indentation) + dumped
+        assert(isinstance(blocks, list))
 
-                yield indentation + '}'
+        parts = []
+        indent_str = indent * self.indentation * spacer
+        for cmd in blocks:
+            last = cmd[-1]
+            if isinstance(last, list):
+                # current cmd is a block cmd
+                block_str = '\n'.join([
+                    '{',
+                    self.dumpstr(last, indent=indent+1),
+                    indent_str + '}'])
+                part = indent_str + spacer.join(cmd[:-1]) + block_str
+                parts.append(part)
             else:
-                yield spacer * current_indent + key + spacer + values + ';'
+                # simple cmd
+                parts.append(indent_str + spacer.join(cmd) + ';')
+        return '\n'.join(parts)
 
     def as_string(self):
-        return '\n'.join(self)
+        return self.dumpstr()
 
     def to_file(self, out):
-        for line in self:
-            out.write(line+"\n")
+        lines = self.dumpstr()
+        out.write(lines)
         out.close()
         return out
 

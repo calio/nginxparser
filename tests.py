@@ -49,17 +49,45 @@ class TestNginxParser(unittest.TestCase):
         self.assertEqual(parsed, ['root', '/test'], ['foo', 'bar'])
 
     def test_blocks(self):
-        parsed = NginxParser.block.parseString('foo {}').asList()
-        self.assertEqual(parsed, [[['foo'], []]])
-        parsed = NginxParser.block.parseString('location /foo{}').asList()
-        self.assertEqual(parsed, [[['location', '/foo'], []]])
-        parsed = NginxParser.block.parseString('foo { bar foo; }').asList()
-        self.assertEqual(parsed, [[['foo'], [['bar', 'foo']]]])
+        parsed = NginxParser.assignment.parseString('foo {}').asList()
+        self.assertEqual(parsed, ['foo', []])
+        parsed = NginxParser.location_block.parseString('location /foo{}').asList()
+        self.assertEqual(parsed, ['location', '/foo', []])
+        parsed = NginxParser.assignment.parseString('foo { bar foo; }').asList()
+        self.assertEqual(parsed, ['foo', [['bar', 'foo']]])
 
     def test_nested_blocks(self):
-        parsed = NginxParser.block.parseString('foo { bar {} }').asList()
-        block, content = first(parsed)
-        self.assertEqual(first(content), [['bar'], []])
+        parsed = NginxParser.assignment.parseString('foo { bar {} }').asList()
+        self.assertEqual(parsed, ['foo', [['bar', []]]])
+
+    def test_single_quoted_strings(self):
+        parsed = NginxParser.script.parseString('''
+            include foo.conf;
+            header_filter_by_lua '
+                return true
+            ';
+        ''').asList()
+        self.assertEqual(parsed, [['include', 'foo.conf'], ['header_filter_by_lua', '\n                return true\n            ']])
+
+    def test_quoted_strings(self):
+        parsed = NginxParser.script.parseString('''
+    log_by_lua_file log.lua;
+    header_filter_by_lua '
+        ngx.re.match(ngx.var.host, [=[^[a-zA-Z0-9]{32,255}$]=])
+    ';
+        ''').asList()
+        self.assertEqual(parsed, [['log_by_lua_file', 'log.lua'],
+            ['header_filter_by_lua', '\n        ngx.re.match(ngx.var.host, [=[^[a-zA-Z0-9]{32,255}$]=])\n    ']])
+
+    def test_if_block(self):
+        parsed = NginxParser.script.parseString('''
+	    if ($request_method = 'OPTIONS') {
+		return 204;
+	    }
+        ''').asList()
+        self.assertEqual(parsed, [['if', '($request_method = \'OPTIONS\') ',
+            [['return', '204']]]])
+
 
     def test_dump_as_string(self):
         dumped = dumps([
@@ -94,33 +122,32 @@ class TestNginxParser(unittest.TestCase):
         self.assertEqual(
             parsed, [
                 ['user', 'www-data'],
-                [['server'], [
+                ['server', [
                     ['listen', '80'],
                     ['server_name', 'foo.com'],
                     ['root', '/home/ubuntu/sites/foo/'],
-                    [['location', '/status'], [
+                    ['location', '/status ', [
                         ['check_status'],
-                        [['types'], [['image/jpeg', 'jpg']]],
+                        ['types', [['image/jpeg', 'jpg']]],
                     ]],
-                    [['location', '~', 'case_sensitive\.php$'], [
+                    ['location', '~', 'case_sensitive\.php$ ', [
                         ['hoge', 'hoge']]],
-                    [['location', '~*', 'case_insensitive\.php$'], []],
-                    [['location', '=', 'exact_match\.php$'], []],
-                    [['location', '^~', 'ignore_regex\.php$'], []],
+                    ['location', '~*', 'case_insensitive\.php$ ', []],
+                    ['location', '=', 'exact_match\.php$ ', []],
+                    ['location', '^~', 'ignore_regex\.php$ ', []],
                 ]]
             ])
 
     @mockio(files)
     def test_parse_if_condation(self):
         parsed = load(open("/etc/nginx/sites-enabled/if_condation.conf"))
-        print parsed
         self.assertEqual(
             parsed, [
-                [['server'], [[
-                        ['if', '( $request_method !~ ^(GET|POST|HEAD)$ ) ', ''], 
-                        [['return', '403']]
+                ['server', [
+                    ['if', '( $request_method !~ ^(GET|POST|HEAD)$ ) ', [
+                        ['return', '403']
                     ]]
-                ]
+                ]]
             ]
         )
 
