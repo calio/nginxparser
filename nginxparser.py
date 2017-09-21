@@ -104,6 +104,40 @@ class NginxDumper(object):
         return out
 
 
+class NginxConfWalker(object):
+    def __init__(self, parsed_conf):
+        self.conf = parsed_conf
+        self.ctx = {}
+
+    def walk(self):
+        ctx = self.ctx
+        for cmd in self.conf:
+            key = cmd[0]
+            if key == "http":
+                self.http(cmd, ctx)
+                self.walk(cmd[-1])
+            elif key == "server":
+                self.server(cmd, ctx)
+                self.walk(cmd[-1])
+            elif key == "location":
+                self.location(cmd, ctx)
+            elif key == "upstream":
+                self.upstream(cmd, ctx)
+        return ctx
+
+    def http(self, cmd, ctx):
+        pass
+
+    def server(self, cmd, ctx):
+        pass
+
+    def location(self, cmd, ctx):
+        pass
+
+    def upstream(self, cmd, ctx):
+        pass
+
+
 # Shortcut functions to respect Python's serialization interface
 # (like pyyaml, picker or json)
 
