@@ -10,8 +10,8 @@ class NginxParser(object):
     """
     A class that parses nginx configuration with pyparsing
     """
-    sq_string = QuotedString("'", multiline=True, unquoteResults=False)
-    dq_string = QuotedString('"', multiline=True, unquoteResults=False)
+    sq_string = QuotedString("'", multiline=True, unquoteResults=True)
+    dq_string = QuotedString('"', multiline=True, unquoteResults=True)
     qstring = sq_string | dq_string
     key = Word(alphas, alphanums+"\_/")
     space = White().suppress()
@@ -84,7 +84,7 @@ class NginxDumper(object):
             if isinstance(last, list):
                 # current cmd is a block cmd
                 block_str = '\n'.join([
-                    '{',
+                    ' {',
                     self.dumpstr(last, indent=indent+1),
                     indent_str + '}'])
                 part = indent_str + spacer.join(cmd[:-1]) + block_str

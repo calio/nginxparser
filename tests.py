@@ -92,13 +92,15 @@ class TestNginxParser(unittest.TestCase):
     def test_dump_as_string(self):
         dumped = dumps([
             ['user', 'www-data'],
-            [['server'], [
+            ['server', [
                 ['listen', '80'],
                 ['server_name', 'foo.com'],
                 ['root', '/home/ubuntu/sites/foo/'],
-                [['location', '/status'], [
+                ['location', '/status', [
                     ['check_status'],
-                    [['types'], [['image/jpeg', 'jpg']]],
+                    ['types', [
+                        ['image/jpeg', 'jpg']
+                    ]],
                 ]]
             ]]])
 
@@ -107,9 +109,9 @@ class TestNginxParser(unittest.TestCase):
                          'server {\n' +
                          '    listen 80;\n' +
                          '    server_name foo.com;\n' +
-                         '    root /home/ubuntu/sites/foo/;\n \n' +
+                         '    root /home/ubuntu/sites/foo/;\n' +
                          '    location /status {\n' +
-                         '        check_status;\n \n' +
+                         '        check_status;\n' +
                          '        types {\n' +
                          '            image/jpeg jpg;\n' +
                          '        }\n' +
